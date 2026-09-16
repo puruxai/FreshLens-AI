@@ -78,6 +78,21 @@ async def perform_quality_inspection(
             
         image_url = f"/static/uploads/{filename}"
 
+        from app.core.storage import SupabaseStorageService
+        if SupabaseStorageService.is_configured():
+            try:
+                with open(filepath, "rb") as f:
+                    f_bytes = f.read()
+                _, access_url = await SupabaseStorageService.upload_image(
+                    file_bytes=f_bytes,
+                    filename=file.filename or "inspection.jpg",
+                    content_type=file.content_type or "image/jpeg"
+                )
+                image_url = access_url
+            except Exception as st_err:
+                from logging import getLogger
+                getLogger("freshlens.storage").warning(f"Supabase storage upload failed, using local URL: {st_err}")
+
         # Execute AI CV pipeline on saved file
         try:
             from app.modules.image_analysis.cv_pipeline import FoodFreshnessModel
@@ -95,6 +110,7 @@ async def perform_quality_inspection(
                 "color_degradation": 0.05,
                 "texture_roughness": 0.10
             }
+
 
     # Convert status string to enum safely
     try:

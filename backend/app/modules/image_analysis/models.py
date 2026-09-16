@@ -1,24 +1,60 @@
+import uuid
 from datetime import datetime, timezone
 from typing import Optional
-from beanie import Document
-from pydantic import Field
+from sqlalchemy import String, Float, Boolean, DateTime
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, mapped_column
 
-class ImageAnalysis(Document):
-    item_id: str = Field(..., description="UUID string referring to Postgres inventory_items.id")
-    filename: str
-    file_url: str
-    freshness_score: float = Field(default=100.0, description="Freshness Index (0.0 to 100.0)")
-    color_degradation: float = Field(default=0.0, description="Color degradation/browning index (0.0 to 1.0)")
-    texture_roughness: float = Field(default=0.0, description="Surface texture decay/wrinkles (0.0 to 1.0)")
-    mold_detected: bool = Field(default=False)
-    mold_confidence: float = Field(default=0.0)
-    bruising_detected: bool = Field(default=False)
-    bruising_confidence: float = Field(default=0.0)
-    damage_detected: bool = Field(default=False)
-    damage_confidence: float = Field(default=0.0)
-    classification_label: str = Field(default="unknown/uncertain", description="ML output class classification")
-    status_message: str = Field(default="Normal classification", description="Detailed safety or status description")
-    analyzed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+from app.core.database import Base
 
-    class Settings:
-        name = "image_analyses"
+class ImageAnalysis(Base):
+    __tablename__ = "image_analyses"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    item_id: Mapped[str] = mapped_column(
+        String, index=True, nullable=False
+    )
+    filename: Mapped[str] = mapped_column(
+        String, nullable=False
+    )
+    file_url: Mapped[str] = mapped_column(
+        String, nullable=False
+    )
+    freshness_score: Mapped[float] = mapped_column(
+        Float, default=100.0, nullable=False
+    )
+    color_degradation: Mapped[float] = mapped_column(
+        Float, default=0.0, nullable=False
+    )
+    texture_roughness: Mapped[float] = mapped_column(
+        Float, default=0.0, nullable=False
+    )
+    mold_detected: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
+    mold_confidence: Mapped[float] = mapped_column(
+        Float, default=0.0, nullable=False
+    )
+    bruising_detected: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
+    bruising_confidence: Mapped[float] = mapped_column(
+        Float, default=0.0, nullable=False
+    )
+    damage_detected: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
+    damage_confidence: Mapped[float] = mapped_column(
+        Float, default=0.0, nullable=False
+    )
+    classification_label: Mapped[str] = mapped_column(
+        String, default="unknown/uncertain", nullable=False
+    )
+    status_message: Mapped[str] = mapped_column(
+        String, default="Normal classification", nullable=False
+    )
+    analyzed_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
+    )

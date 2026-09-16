@@ -19,9 +19,11 @@ if config.config_file_name is not None:
 # for 'autogenerate' support
 from app.core.database import Base
 from app.modules.user.models import User
-from app.modules.inventory.models import InventoryBatch
+from app.modules.inventory.models import Batch, InventoryItem
+from app.modules.inspection.models import QualityInspection
 
 target_metadata = Base.metadata
+
 
 # Retrieve DB settings from core config
 from app.core.config import settings

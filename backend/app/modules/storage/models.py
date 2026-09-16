@@ -1,16 +1,36 @@
+import uuid
 from datetime import datetime, timezone
 from typing import Optional
-from beanie import Document
-from pydantic import Field
+from sqlalchemy import String, Float, DateTime
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, mapped_column
 
-class StorageReading(Document):
-    item_id: str = Field(..., description="PostgreSQL item UUID string link")
-    warehouse_zone: str = Field(..., description="Storage area / location name")
-    temperature: float = Field(..., description="Degrees Celsius")
-    humidity: float = Field(..., description="Relative humidity percentage")
-    air_circulation: str = Field("Medium", description="Air flow level: Low, Medium, High")
-    light_exposure: str = Field("Low", description="Light level: Dark, Low, Medium, High")
-    recorded_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+from app.core.database import Base
 
-    class Settings:
-        name = "storage_readings"
+class StorageReading(Base):
+    __tablename__ = "storage_readings"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    item_id: Mapped[str] = mapped_column(
+        String, index=True, nullable=False
+    )
+    warehouse_zone: Mapped[str] = mapped_column(
+        String, nullable=False
+    )
+    temperature: Mapped[float] = mapped_column(
+        Float, nullable=False
+    )
+    humidity: Mapped[float] = mapped_column(
+        Float, nullable=False
+    )
+    air_circulation: Mapped[str] = mapped_column(
+        String, default="Medium", nullable=False
+    )
+    light_exposure: Mapped[str] = mapped_column(
+        String, default="Low", nullable=False
+    )
+    recorded_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
+    )

@@ -24,7 +24,7 @@ def evaluate_storage_compliance(item: InventoryItem, reading: StorageReading) ->
             light_exposure=reading.light_exposure,
             temperature_deviation=0.0,
             humidity_deviation=0.0,
-            recorded_at=reading.recorded_at,
+            recorded_at=reading.recorded_at or datetime.now(timezone.utc),
             recommendations=["Reference range unavailable for this product category."]
         )
 
@@ -115,6 +115,6 @@ def evaluate_storage_compliance(item: InventoryItem, reading: StorageReading) ->
         light_exposure=reading.light_exposure,
         temperature_deviation=round(temp_diff, 1),
         humidity_deviation=round(hum_diff, 1),
-        recorded_at=reading.recorded_at,
+            recorded_at=reading.recorded_at or datetime.now(timezone.utc),
         recommendations=recommendations
     )

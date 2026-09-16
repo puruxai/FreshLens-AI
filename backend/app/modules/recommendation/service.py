@@ -24,13 +24,19 @@ async def generate_item_recommendations(db: AsyncSession, item: InventoryItem) -
     sub_scores = health_rep.breakdown
 
     # 2. Fetch latest telemetry and visual logs
-    latest_reading = await StorageReading.find(
-        StorageReading.item_id == str(item.id)
-    ).sort(-StorageReading.recorded_at).first()
+    res_reading = await db.execute(
+        select(StorageReading)
+        .where(StorageReading.item_id == str(item.id))
+        .order_by(StorageReading.recorded_at.desc())
+    )
+    latest_reading = res_reading.scalars().first()
 
-    latest_analysis = await ImageAnalysis.find(
-        ImageAnalysis.item_id == str(item.id)
-    ).sort(-ImageAnalysis.analyzed_at).first()
+    res_analysis = await db.execute(
+        select(ImageAnalysis)
+        .where(ImageAnalysis.item_id == str(item.id))
+        .order_by(ImageAnalysis.analyzed_at.desc())
+    )
+    latest_analysis = res_analysis.scalars().first()
 
     # 3. Load category guidelines
     consts = FOOD_CATEGORY_CONSTANTS.get(item.category, FOOD_CATEGORY_CONSTANTS["Fruits"])

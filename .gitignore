@@ -57,4 +57,6 @@ backend/static/uploads/*
 node_modules/
 .next/
 dist/
-coverage/
+scratch/
+static/
+

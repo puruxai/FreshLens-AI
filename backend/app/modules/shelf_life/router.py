@@ -61,17 +61,24 @@ async def predict_shelf_life(
         hum_val = req.humidity if req.humidity is not None else hum_def
 
         # Fetch latest storage reading for air_circulation & light_exposure
-        latest_reading = await StorageReading.find(
-            StorageReading.item_id == str(item.id)
-        ).sort(-StorageReading.recorded_at).first()
+        from sqlalchemy.future import select
+        res_stg = await db.execute(
+            select(StorageReading)
+            .filter(StorageReading.item_id == str(item.id))
+            .order_by(StorageReading.recorded_at.desc())
+        )
+        latest_reading = res_stg.scalars().first()
         if latest_reading:
             air_circ = latest_reading.air_circulation
             light_exp = latest_reading.light_exposure
 
         # Fetch latest image analysis score & defect flags
-        latest_analysis = await ImageAnalysis.find(
-            ImageAnalysis.item_id == str(item.id)
-        ).sort(-ImageAnalysis.analyzed_at).first()
+        res_img = await db.execute(
+            select(ImageAnalysis)
+            .filter(ImageAnalysis.item_id == str(item.id))
+            .order_by(ImageAnalysis.analyzed_at.desc())
+        )
+        latest_analysis = res_img.scalars().first()
         if latest_analysis:
             visual_score = latest_analysis.freshness_score
             mold_detected = latest_analysis.mold_detected
@@ -138,9 +145,12 @@ async def get_item_shelf_life_prediction(
     # Fetch latest telemetry reading
     air_circ = "Medium"
     light_exp = "Low"
-    latest_reading = await StorageReading.find(
-        StorageReading.item_id == str(item.id)
-    ).sort(-StorageReading.recorded_at).first()
+    res_stg2 = await db.execute(
+        select(StorageReading)
+        .filter(StorageReading.item_id == str(item.id))
+        .order_by(StorageReading.recorded_at.desc())
+    )
+    latest_reading = res_stg2.scalars().first()
     if latest_reading:
         temp_def = latest_reading.temperature
         hum_def = latest_reading.humidity
@@ -151,9 +161,13 @@ async def get_item_shelf_life_prediction(
     mold_detected = False
     bruising_detected = False
     damage_detected = False
-    latest = await ImageAnalysis.find(
-        ImageAnalysis.item_id == str(item.id)
-    ).sort(-ImageAnalysis.analyzed_at).first()
+    res_img2 = await db.execute(
+        select(ImageAnalysis)
+        .filter(ImageAnalysis.item_id == str(item.id))
+        .order_by(ImageAnalysis.analyzed_at.desc())
+    )
+    latest = res_img2.scalars().first()
+
     if latest:
         visual_score = latest.freshness_score
         mold_detected = latest.mold_detected

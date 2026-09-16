@@ -2,6 +2,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
 
 from app.modules.inventory.models import InventoryItem
 from app.modules.image_analysis.models import ImageAnalysis
@@ -46,10 +47,14 @@ async def calculate_item_freshness(db: AsyncSession, item: InventoryItem) -> Dic
     now = datetime.now(timezone.utc)
     decay_factor = calculate_decay_factor(item.entry_date, item.expiry_date, now)
 
-    # Fetch latest MongoDB image analysis
-    latest_analysis = await ImageAnalysis.find(
-        ImageAnalysis.item_id == str(item.id)
-    ).sort(-ImageAnalysis.analyzed_at).first()
+    # Fetch latest image analysis from PostgreSQL
+    from sqlalchemy.future import select
+    res = await db.execute(
+        select(ImageAnalysis)
+        .filter(ImageAnalysis.item_id == str(item.id))
+        .order_by(ImageAnalysis.analyzed_at.desc())
+    )
+    latest_analysis = res.scalars().first()
 
     if latest_analysis:
         M = 1.0 if latest_analysis.mold_detected else 0.0
@@ -85,10 +90,14 @@ async def get_item_freshness_trend(db: AsyncSession, item: InventoryItem) -> Lis
     """
     Calculate and gather chronological freshness scores over time.
     """
-    # Fetch all MongoDB image reports
-    analyses = await ImageAnalysis.find(
-        ImageAnalysis.item_id == str(item.id)
-    ).sort(ImageAnalysis.analyzed_at).to_list()
+    # Fetch all image reports
+    res = await db.execute(
+        select(ImageAnalysis)
+        .filter(ImageAnalysis.item_id == str(item.id))
+        .order_by(ImageAnalysis.analyzed_at.asc())
+    )
+    analyses = res.scalars().all()
+
 
     trend = []
 

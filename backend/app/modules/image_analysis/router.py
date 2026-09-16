@@ -20,8 +20,30 @@ UPLOAD_DIR = "static/uploads"
 model_pipeline = FoodFreshnessModel()
 
 from app.core.rate_limit import upload_rate_limiter
+from pydantic import BaseModel, ConfigDict
+from datetime import datetime
 
-@router.post("/upload", response_model=ImageAnalysis, status_code=status.HTTP_201_CREATED, dependencies=[Depends(upload_rate_limiter)])
+class ImageAnalysisResponse(BaseModel):
+    id: uuid.UUID
+    item_id: str
+    filename: str
+    file_url: str
+    freshness_score: float
+    color_degradation: float
+    texture_roughness: float
+    mold_detected: bool
+    mold_confidence: float
+    bruising_detected: bool
+    bruising_confidence: float
+    damage_detected: bool
+    damage_confidence: float
+    classification_label: str
+    status_message: str
+    analyzed_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+@router.post("/upload", response_model=ImageAnalysisResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(upload_rate_limiter)])
 async def upload_food_image(
     *,
     db: AsyncSession = Depends(get_db),
@@ -29,6 +51,7 @@ async def upload_food_image(
     file: UploadFile = File(..., description="Food item image file"),
     current_user: User = Depends(get_current_user)
 ) -> Any:
+
     """
     Upload a food item image, execute OpenCV + ML freshness extraction,
     update the item's relational status, and save metrics in MongoDB.
@@ -102,11 +125,29 @@ async def upload_food_image(
         db.add(item)
         await db.flush()
 
-    # 5. Save reference & analytics metrics in MongoDB via Beanie Document
+    # 5. Upload to Supabase Storage if configured
+    file_url = f"/static/uploads/{unique_filename}"
+    from app.core.storage import SupabaseStorageService
+
+    if SupabaseStorageService.is_configured():
+        try:
+            with open(file_path, "rb") as f:
+                f_bytes = f.read()
+            _, access_url = await SupabaseStorageService.upload_image(
+                file_bytes=f_bytes,
+                filename=file.filename or "unknown.jpg",
+                content_type=file.content_type or "image/jpeg"
+            )
+            file_url = access_url
+        except Exception as st_err:
+            from logging import getLogger
+            getLogger("freshlens.storage").warning(f"Supabase storage upload failed, using local URL: {st_err}")
+
+    # Save reference & analytics metrics in MongoDB via Beanie Document
     analysis_doc = ImageAnalysis(
         item_id=str(item.id),
         filename=file.filename or "unknown",
-        file_url=f"/static/uploads/{unique_filename}",
+        file_url=file_url,
         freshness_score=score,
         color_degradation=analysis_results.get("color_degradation", 0.0),
         texture_roughness=analysis_results.get("texture_roughness", 0.0),
@@ -119,7 +160,9 @@ async def upload_food_image(
         classification_label=analysis_results.get("classification_label", "unknown/uncertain"),
         status_message=analysis_results.get("status_message", "Normal classification")
     )
-    await analysis_doc.insert()
+    db.add(analysis_doc)
+    await db.commit()
+    await db.refresh(analysis_doc)
 
     # Auto-generate freshness alert if score is low or mold is detected
     if is_moldy or score < 60.0:
@@ -130,7 +173,7 @@ async def upload_food_image(
         msg = f"Visual analysis detected mold on '{item.name}'!" if is_moldy else f"'{item.name}' freshness score dropped to {score}%."
         
         # Dispatch to RETAIL_MANAGER
-        await NotificationService.create_notification(NotificationCreate(
+        await NotificationService.create_notification(db, NotificationCreate(
             role="RETAIL_MANAGER",
             title=title,
             message=msg,
@@ -255,14 +298,14 @@ async def get_model_status() -> Any:
         classes=CLASSES
     )
 
-@router.get("/item/{item_id}", response_model=List[ImageAnalysis])
+@router.get("/item/{item_id}", response_model=List[ImageAnalysisResponse])
 async def get_item_analyses(
     item_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ) -> Any:
     """
-    Retrieve all computer vision image reports for an inventory item from MongoDB.
+    Retrieve all computer vision image reports for an inventory item.
     """
     # Verify item exists first
     try:
@@ -280,6 +323,13 @@ async def get_item_analyses(
             detail=f"Inventory item ID '{item_id}' not found."
         )
 
-    # Query Beanie model
-    analyses = await ImageAnalysis.find(ImageAnalysis.item_id == str(item_uuid)).to_list()
+    # Query PostgreSQL model
+    from sqlalchemy.future import select
+    result = await db.execute(
+        select(ImageAnalysis)
+        .filter(ImageAnalysis.item_id == str(item_uuid))
+        .order_by(ImageAnalysis.analyzed_at.desc())
+    )
+    analyses = result.scalars().all()
     return analyses
+

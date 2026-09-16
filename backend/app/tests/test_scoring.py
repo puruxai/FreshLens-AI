@@ -4,6 +4,8 @@ from httpx import AsyncClient
 
 from app.modules.image_analysis.models import ImageAnalysis
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 async def get_token(client: AsyncClient, email: str, password: str, name: str, role: str) -> str:
     await client.post(
         "/api/v1/auth/register",
@@ -16,7 +18,7 @@ async def get_token(client: AsyncClient, email: str, password: str, name: str, r
     return response.json()["access_token"]
 
 @pytest.mark.asyncio
-async def test_weighted_scoring_engine(client: AsyncClient):
+async def test_weighted_scoring_engine(client: AsyncClient, db_session: AsyncSession):
     # Setup credentials
     mgr_token = await get_token(client, "mgr7@example.com", "pass123", "Mgr 7", "RETAIL_MANAGER")
     mgr_headers = {"Authorization": f"Bearer {mgr_token}"}
@@ -74,7 +76,8 @@ async def test_weighted_scoring_engine(client: AsyncClient):
         damage_confidence=0.0,
         analyzed_at=datetime.now(timezone.utc)
     )
-    await analysis.insert()
+    db_session.add(analysis)
+    await db_session.commit()
 
     res_mold_score = await client.get(
         f"/api/v1/scoring/item/{item_id}",

@@ -85,9 +85,12 @@ class ReportService:
             classification = health.quality_classification
             
             # Fetch actual storage telemetry readings
-            latest_reading = await StorageReading.find(
-                StorageReading.item_id == str(item.id)
-            ).sort(-StorageReading.recorded_at).first()
+            reading_res = await db.execute(
+                select(StorageReading)
+                .where(StorageReading.item_id == str(item.id))
+                .order_by(StorageReading.recorded_at.desc())
+            )
+            latest_reading = reading_res.scalars().first()
 
             if latest_reading:
                 temp = latest_reading.temperature

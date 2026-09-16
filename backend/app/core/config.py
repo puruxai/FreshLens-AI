@@ -4,8 +4,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env", env_ignore_empty=True, extra="ignore"
+        env_file=(".env", "backend/.env"), env_ignore_empty=True, extra="ignore"
     )
+
 
     PROJECT_NAME: str = "FreshLens"
     API_V1_STR: str = "/api/v1"
@@ -13,7 +14,7 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
 
     # CORS Configuration
-    CORS_ORIGINS: List[str] = ["http://localhost:3000"]
+    CORS_ORIGINS: List[str] = ["*"]
 
     # PostgreSQL
     POSTGRES_USER: str = "postgres"
@@ -115,14 +116,27 @@ class Settings(BaseSettings):
         "None": 1.0,
     }
 
+    # Supabase Optional Integration Settings
+    SUPABASE_URL: Optional[str] = None
+    SUPABASE_PUBLISHABLE_KEY: Optional[str] = None
+    SUPABASE_SECRET_KEY: Optional[str] = None
+    SUPABASE_JWKS_URL: Optional[str] = None
+
     @model_validator(mode="after")
-    def validate_weights(self) -> 'Settings':
+    def validate_weights_and_db_url(self) -> 'Settings':
         total = (self.FRESHNESS_VISUAL_WEIGHT + 
                  self.FRESHNESS_STORAGE_WEIGHT + 
                  self.FRESHNESS_SHELF_WEIGHT + 
                  self.FRESHNESS_AGE_WEIGHT)
         if not abs(total - 1.0) < 1e-5:
             raise ValueError(f"Total freshness scoring weights must sum to exactly 1.0 (got {total})")
+        
+        # Ensure asyncpg dialect prefix for SQLAlchemy async engine
+        if self.DATABASE_URL:
+            if self.DATABASE_URL.startswith("postgresql://"):
+                self.DATABASE_URL = self.DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
+            elif self.DATABASE_URL.startswith("postgres://"):
+                self.DATABASE_URL = self.DATABASE_URL.replace("postgres://", "postgresql+asyncpg://", 1)
         return self
 
 settings = Settings()

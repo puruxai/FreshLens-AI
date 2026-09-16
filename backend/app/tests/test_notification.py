@@ -1,24 +1,14 @@
 import pytest
-import pytest_asyncio
 from httpx import AsyncClient
-from beanie import init_beanie
-from motor.motor_asyncio import AsyncIOMotorClient
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
-from app.modules.system.models import SystemLog
-from app.modules.image_analysis.models import ImageAnalysis
-from app.modules.storage.models import StorageReading
-from app.modules.notification.models import Notification, NotificationPreference
 from app.modules.notification.schemas import NotificationCreate, PreferenceUpdate
 from app.modules.notification.service import NotificationService
 
 @pytest.mark.asyncio
-async def test_notifications_crud_and_gating(client: AsyncClient):
-    # Clear previous documents
-    await Notification.find_all().delete()
-    
+async def test_notifications_crud_and_gating(client: AsyncClient, db_session: AsyncSession):
     # 1. Create a notification for WAREHOUSE_OPERATOR
-    n1 = await NotificationService.create_notification(NotificationCreate(
+    n1 = await NotificationService.create_notification(db_session, NotificationCreate(
         role="WAREHOUSE_OPERATOR",
         title="Critical Temp Spill",
         message="Fridge Unit 3 temperature rose above threshold.",
@@ -26,7 +16,7 @@ async def test_notifications_crud_and_gating(client: AsyncClient):
     ))
     
     # 2. Create a notification for RETAIL_MANAGER
-    n2 = await NotificationService.create_notification(NotificationCreate(
+    n2 = await NotificationService.create_notification(db_session, NotificationCreate(
         role="RETAIL_MANAGER",
         title="FEFO Overrun Action",
         message="Salmon batch shows kinetic decay rates.",
@@ -59,8 +49,6 @@ async def test_notifications_crud_and_gating(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_notification_preferences(client: AsyncClient):
-    await NotificationPreference.find_all().delete()
-    
     user_id = "test-user-uuid"
     
     # 1. Get default preference (auto-creates)
@@ -78,7 +66,7 @@ async def test_notification_preferences(client: AsyncClient):
     )
     res_put = await client.put(
         f"/api/v1/notification/preference?user_id={user_id}",
-        json=update_data.dict(exclude_unset=True)
+        json=update_data.model_dump(exclude_unset=True)
     )
     assert res_put.status_code == 200
     updated_data = res_put.json()

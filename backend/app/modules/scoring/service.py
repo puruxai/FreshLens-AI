@@ -25,9 +25,12 @@ async def calculate_item_health_score(db: AsyncSession, item: InventoryItem) -> 
     expiry = item.expiry_date.replace(tzinfo=timezone.utc) if item.expiry_date.tzinfo is None else item.expiry_date
 
     # 1. Fetch latest image analysis for Visual Score
-    latest_analysis = await ImageAnalysis.find(
-        ImageAnalysis.item_id == str(item.id)
-    ).sort(-ImageAnalysis.analyzed_at).first()
+    res_img = await db.execute(
+        select(ImageAnalysis)
+        .filter(ImageAnalysis.item_id == str(item.id))
+        .order_by(ImageAnalysis.analyzed_at.desc())
+    )
+    latest_analysis = res_img.scalars().first()
 
     mold_detected = False
     if latest_analysis:
@@ -45,9 +48,13 @@ async def calculate_item_health_score(db: AsyncSession, item: InventoryItem) -> 
         visual_score = 100.0
 
     # 2. Fetch latest storage reading for Storage Score
-    latest_reading = await StorageReading.find(
-        StorageReading.item_id == str(item.id)
-    ).sort(-StorageReading.recorded_at).first()
+    res_stg = await db.execute(
+        select(StorageReading)
+        .filter(StorageReading.item_id == str(item.id))
+        .order_by(StorageReading.recorded_at.desc())
+    )
+    latest_reading = res_stg.scalars().first()
+
 
     if latest_reading:
         consts = FOOD_CATEGORY_CONSTANTS.get(item.category, FOOD_CATEGORY_CONSTANTS["Fruits"])

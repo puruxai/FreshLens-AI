@@ -1,5 +1,8 @@
 from typing import Any, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.modules.user.models import User
 from app.modules.notification.schemas import (
@@ -15,7 +18,8 @@ async def list_notifications(
     role: Optional[str] = None,
     user_id: Optional[str] = None,
     unread_only: bool = False,
-    current_user: Optional[User] = Depends(lambda: None)  # Optional for flexible sandbox testing
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(lambda: None)
 ) -> Any:
     """
     List alerts filtered by active role or user ID.
@@ -31,12 +35,12 @@ async def list_notifications(
             target_user_id = str(current_user.id)
 
     results = await NotificationService.get_notifications_for_user(
+        db=db,
         user_id=target_user_id,
         role=target_role,
         unread_only=unread_only
     )
     
-    # Map Beanie documents to Response schemas
     return [
         NotificationResponse(
             id=str(n.id),
@@ -52,11 +56,14 @@ async def list_notifications(
     ]
 
 @router.post("/trigger", response_model=NotificationResponse, status_code=status.HTTP_201_CREATED)
-async def trigger_mock_notification(data: NotificationCreate) -> Any:
+async def trigger_mock_notification(
+    data: NotificationCreate,
+    db: AsyncSession = Depends(get_db)
+) -> Any:
     """
     Manually dispatch a mock notification (system/admin alert trigger).
     """
-    n = await NotificationService.create_notification(data)
+    n = await NotificationService.create_notification(db, data)
     return NotificationResponse(
         id=str(n.id),
         user_id=n.user_id,
@@ -69,11 +76,14 @@ async def trigger_mock_notification(data: NotificationCreate) -> Any:
     )
 
 @router.patch("/{id}/read")
-async def mark_notification_read(id: str) -> Any:
+async def mark_notification_read(
+    id: str,
+    db: AsyncSession = Depends(get_db)
+) -> Any:
     """
     Mark a single alert as read.
     """
-    success = await NotificationService.mark_as_read(id)
+    success = await NotificationService.mark_as_read(db, id)
     if not success:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -84,20 +94,24 @@ async def mark_notification_read(id: str) -> Any:
 @router.post("/read-all")
 async def mark_all_notifications_read(
     role: Optional[str] = None,
-    user_id: Optional[str] = None
+    user_id: Optional[str] = None,
+    db: AsyncSession = Depends(get_db)
 ) -> Any:
     """
     Mark all unread alerts for the specified role or user as read.
     """
-    count = await NotificationService.mark_all_read(user_id=user_id, role=role)
+    count = await NotificationService.mark_all_read(db, user_id=user_id, role=role)
     return {"status": "success", "count": count}
 
 @router.get("/preference", response_model=PreferenceResponse)
-async def get_user_preference(user_id: str) -> Any:
+async def get_user_preference(
+    user_id: str,
+    db: AsyncSession = Depends(get_db)
+) -> Any:
     """
     Fetch notification thresholds and preferences for a user.
     """
-    pref = await NotificationService.get_or_create_preference(user_id)
+    pref = await NotificationService.get_or_create_preference(db, user_id)
     return PreferenceResponse(
         user_id=pref.user_id,
         email_enabled=pref.email_enabled,
@@ -107,11 +121,15 @@ async def get_user_preference(user_id: str) -> Any:
     )
 
 @router.put("/preference", response_model=PreferenceResponse)
-async def update_user_preference(user_id: str, data: PreferenceUpdate) -> Any:
+async def update_user_preference(
+    user_id: str,
+    data: PreferenceUpdate,
+    db: AsyncSession = Depends(get_db)
+) -> Any:
     """
     Update alert configuration preferences for a user.
     """
-    pref = await NotificationService.update_preference(user_id, data)
+    pref = await NotificationService.update_preference(db, user_id, data)
     return PreferenceResponse(
         user_id=pref.user_id,
         email_enabled=pref.email_enabled,

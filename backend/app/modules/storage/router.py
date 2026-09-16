@@ -40,7 +40,7 @@ async def record_storage_reading(
             detail="Operation restricted to warehouse managers or admins."
         )
 
-    # 3. Create Beanie Document log
+    # 3. Create SQLAlchemy model
     reading = StorageReading(
         item_id=str(item.id),
         warehouse_zone=item.storage_location or "Warehouse Zone Alpha",
@@ -50,7 +50,8 @@ async def record_storage_reading(
         light_exposure=req.light_exposure,
         recorded_at=datetime.now(timezone.utc)
     )
-    await reading.insert()
+    db.add(reading)
+    await db.flush()
 
     # 4. Generate Compliance report
     report = evaluate_storage_compliance(item, reading)
@@ -60,18 +61,24 @@ async def record_storage_reading(
         from app.modules.notification.schemas import NotificationCreate
         
         # Dispatch to WAREHOUSE_OPERATOR and RETAIL_MANAGER
-        await NotificationService.create_notification(NotificationCreate(
-            role="WAREHOUSE_OPERATOR",
-            title=f"Climate Deviation Alert: {report.compliance_status}",
-            message=f"Zone '{reading.warehouse_zone}' for item '{item.name}' reports temp={reading.temperature}°C, hum={reading.humidity}% RH.",
-            type="storage"
-        ))
-        await NotificationService.create_notification(NotificationCreate(
-            role="RETAIL_MANAGER",
-            title=f"Climate Deviation Alert: {report.compliance_status}",
-            message=f"Item '{item.name}' in zone '{reading.warehouse_zone}' has non-compliant storage metrics.",
-            type="storage"
-        ))
+        await NotificationService.create_notification(
+            db=db,
+            payload=NotificationCreate(
+                role="WAREHOUSE_OPERATOR",
+                title=f"Climate Deviation Alert: {report.compliance_status}",
+                message=f"Zone '{reading.warehouse_zone}' for item '{item.name}' reports temp={reading.temperature}°C, hum={reading.humidity}% RH.",
+                type="storage"
+            )
+        )
+        await NotificationService.create_notification(
+            db=db,
+            payload=NotificationCreate(
+                role="RETAIL_MANAGER",
+                title=f"Climate Deviation Alert: {report.compliance_status}",
+                message=f"Item '{item.name}' in zone '{reading.warehouse_zone}' has non-compliant storage metrics.",
+                type="storage"
+            )
+        )
 
     return report
 
@@ -91,10 +98,14 @@ async def get_item_storage_report(
             detail="Inventory item not found"
         )
 
-    # Fetch latest Beanie reading
-    latest = await StorageReading.find(
-        StorageReading.item_id == str(item.id)
-    ).sort(-StorageReading.recorded_at).first()
+    # Fetch latest reading from PostgreSQL
+    from sqlalchemy.future import select
+    res = await db.execute(
+        select(StorageReading)
+        .filter(StorageReading.item_id == str(item.id))
+        .order_by(StorageReading.recorded_at.desc())
+    )
+    latest = res.scalars().first()
 
     if not latest:
         # Generate default compliant report if no manual logs registered yet
@@ -131,9 +142,14 @@ async def get_item_storage_history(
             detail="Inventory item not found"
         )
 
-    readings = await StorageReading.find(
-        StorageReading.item_id == str(item.id)
-    ).sort(-StorageReading.recorded_at).limit(10).to_list()
+    from sqlalchemy.future import select
+    res = await db.execute(
+        select(StorageReading)
+        .filter(StorageReading.item_id == str(item.id))
+        .order_by(StorageReading.recorded_at.desc())
+        .limit(10)
+    )
+    readings = res.scalars().all()
 
     return [
         {
@@ -146,3 +162,25 @@ async def get_item_storage_history(
         }
         for r in readings
     ]
+
+from fastapi.responses import Response
+from app.core.storage import SupabaseStorageService
+
+@router.get("/image/{path:path}")
+async def get_storage_image(
+    path: str,
+    current_user: User = Depends(get_current_user)
+) -> Response:
+    """
+    Retrieve/download an image from the private Supabase Storage 'food-images' bucket.
+    Restricted to authenticated users.
+    """
+    try:
+        file_bytes, content_type = await SupabaseStorageService.download_image(path)
+        return Response(content=file_bytes, media_type=content_type)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Image file not found or inaccessible: {str(e)}"
+        )
+

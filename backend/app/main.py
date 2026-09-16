@@ -10,7 +10,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
-from motor.motor_asyncio import AsyncIOMotorClient
 
 from app.core.config import settings
 from app.core.database import init_databases, get_db
