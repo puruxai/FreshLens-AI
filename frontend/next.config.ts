@@ -29,10 +29,26 @@ const nextConfig: NextConfig = {
       ];
     }
 
-    // 2. If running on Vercel (same-origin API serverless functions via vercel.json),
-    // skip rewrites so Vercel handles /api/v1 and API routes natively.
+    // 2. On Vercel: rewrite API endpoints to Vercel Python serverless function /api/index
     if (process.env.VERCEL || process.env.VERCEL_ENV) {
-      return [];
+      return [
+        {
+          source: "/api/v1/:path*",
+          destination: "/api/index",
+        },
+        {
+          source: "/docs",
+          destination: "/api/index",
+        },
+        {
+          source: "/openapi.json",
+          destination: "/api/index",
+        },
+        {
+          source: "/health",
+          destination: "/api/index",
+        },
+      ];
     }
 
     // 3. Fallback for local development or Docker container environment
